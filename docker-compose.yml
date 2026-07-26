@@ -1,0 +1,15 @@
+services:
+  postgres_db:
+    image: postgres:16
+    container_name: smart_ats_db
+    environment:
+      POSTGRES_USER: ats_user
+      POSTGRES_PASSWORD: ats_password
+      POSTGRES_DB: smart_ats_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
