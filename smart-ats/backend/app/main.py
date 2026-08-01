@@ -2,14 +2,13 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.services.network import AsyncNetworkService
+from app.routers import jobs, applications
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # راه‌اندازی کلاینت ناهمگام هنگام شروع سرور
     AsyncNetworkService.get_client()
     yield
-    # بستن کلاینت هنگام خاموش شدن سرور
     await AsyncNetworkService.close_client()
 
 
@@ -20,12 +19,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+app.include_router(jobs.router)
+app.include_router(applications.router)
+
 
 @app.get("/", tags=["Health Check"])
 async def root():
-    """
-    بررسی سلامت سرور و Event Loop ناهمگام
-    """
     loop = asyncio.get_event_loop()
     return {
         "status": "online",
@@ -37,9 +36,6 @@ async def root():
 
 @app.get("/health", tags=["Health Check"])
 async def health_check():
-    """
-    تایید آماده بودن کلاینت ناهمگام HTTP
-    """
     client = AsyncNetworkService.get_client()
     return {
         "status": "healthy",
