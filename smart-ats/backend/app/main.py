@@ -1,8 +1,21 @@
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.services.network import AsyncNetworkService
 from app.routers import jobs, applications
+from app.middleware import (
+    http_exception_handler,
+    validation_exception_handler,
+    global_exception_handler
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 
 @asynccontextmanager
@@ -18,6 +31,11 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# ثبت هندلرهای سراسری خطا
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, global_exception_handler)
 
 app.include_router(jobs.router)
 app.include_router(applications.router)
