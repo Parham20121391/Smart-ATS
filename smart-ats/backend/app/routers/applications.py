@@ -1,6 +1,8 @@
-from fastapi import APIRouter, UploadFile, File, Query, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, Query, HTTPException, status, Depends
+from sqlalchemy.orm import Session
 from app.schemas.application import ApplicationCreateResponse, VerificationResponse
 from app.services.state_machine import StateMachineService
+from app.database import get_db
 
 router = APIRouter(prefix="/api/v1", tags=["Applications"])
 
@@ -12,11 +14,6 @@ async def submit_application(
     linkedin_url: str = Query(..., description="آدرس پروفایل لینکدین کارجو"),
     file: UploadFile = File(..., description="فایل رزومه PDF")
 ):
-    """
-    دریافت رزومه و اطلاعات کارجو.
-    بلافاصله پس از ثبت، ورکرهای راستی‌آزمایی گیت‌هاب و لینکدین
-    در بک‌گراند تریگر می‌شوند.
-    """
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="پایپلاین پردازش رزومه در فاز بعدی پیاده‌سازی می‌شود."
@@ -24,12 +21,7 @@ async def submit_application(
 
 
 @router.get("/applications/verification/{id}", response_model=VerificationResponse, status_code=status.HTTP_200_OK)
-async def get_application_verification(
-    id: int
-):
-    """
-    دریافت نمرات تفکیکی اصالت کارجو و وضعیت پرچم امنیتی
-    """
+async def get_application_verification(id: int):
     raise HTTPException(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="این اندپوینت در فاز بعدی به لایه راستی‌آزمایی متصل می‌شود."
@@ -41,9 +33,6 @@ async def test_state_transition(
     current_state: str = Query(..., description="وضعیت فعلی کاندیدا"),
     next_state: str = Query(..., description="وضعیت جدید درخواستی")
 ):
-    """
-    تست موتور ماشین وضعیت - بررسی مجاز بودن انتقال وضعیت
-    """
     StateMachineService.validate_state_transition_v2(current_state, next_state)
     allowed = StateMachineService.get_allowed_transitions(current_state)
     return {
@@ -51,4 +40,22 @@ async def test_state_transition(
         "next_state": next_state,
         "transition_valid": True,
         "allowed_transitions": allowed
+    }
+
+
+@router.patch("/applications/{application_id}/status", status_code=status.HTTP_200_OK, tags=["State Machine"])
+async def update_application_status(
+    application_id: int,
+    next_state: str = Query(..., description="وضعیت جدید درخواستی"),
+    db: Session = Depends(get_db)
+):
+    updated_app = StateMachineService.enforce_state_machine_matrix(
+        application_id=application_id,
+        next_state=next_state,
+        db=db
+    )
+    return {
+        "application_id": updated_app.id,
+        "current_status": updated_app.current_status,
+        "integrity_flag": updated_app.integrity_flag
     }

@@ -1,4 +1,6 @@
 from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
+from app.models.application import Application
 
 
 class StateMachineService:
@@ -6,7 +8,6 @@ class StateMachineService:
     سرویس مدیریت وضعیت و کنترل ماتریس انتقال چرخه استخدام کاندیداها
     """
 
-    # تعریف دقیق مقاصد مجاز از هر مبدا وضعیت
     VALID_TRANSITIONS = {
         "REGISTERED": ["PENDING_VERIFICATION"],
         "PENDING_VERIFICATION": ["SCREENING", "FLAGGED_REJECTED"],
@@ -22,10 +23,8 @@ class StateMachineService:
     @classmethod
     def validate_state_transition_v2(cls, current_state: str, next_state: str) -> None:
         """
-        بررسی اصالت و مجاز بودن انتقال وضعیت بر اساس ماتریس سختگیرانه سیستم.
-        در صورت غیرمجاز بودن، خطای ۴۰۰ صادر می‌شود.
+        بررسی اصالت و مجاز بودن انتقال وضعیت بر اساس ماتریس سختگیرانه سیستم
         """
-        # بررسی وجود وضعیت فعلی در ماتریس
         if current_state not in cls.VALID_TRANSITIONS:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -34,7 +33,6 @@ class StateMachineService:
 
         allowed_next_states = cls.VALID_TRANSITIONS[current_state]
 
-        # بررسی مجاز بودن انتقال به وضعیت جدید
         if next_state not in allowed_next_states:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -48,3 +46,42 @@ class StateMachineService:
         دریافت لیست وضعیت‌های مجاز از وضعیت فعلی
         """
         return cls.VALID_TRANSITIONS.get(current_state, [])
+
+    @classmethod
+    def enforce_state_machine_matrix(
+        cls,
+        application_id: int,
+        next_state: str,
+        db: Session
+    ) -> Application:
+        """
+        دکوراتور اصلی - قفل‌گذاری بدبینانه و اعتبارسنجی کامل انتقال وضعیت
+        """
+        # قفل‌گذاری بدبینانه - جلوگیری از Race Condition
+        app_record = db.query(Application).filter(
+            Application.id == application_id
+        ).with_for_update().first()
+
+        if not app_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="درخواست مورد نظر یافت نشد."
+            )
+
+        # بررسی مجاز بودن انتقال در ماتریس
+        cls.validate_state_transition_v2(app_record.current_status, next_state)
+
+        # بررسی شرط امنیتی integrity_flag برای ورود به SCREENING
+        if next_state == "SCREENING" and not app_record.integrity_flag:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="عبور به مرحله غربالگری به دلیل فعال بودن پرچم تخلف و "
+                       "نمره اصالت پایین مجاز نیست."
+            )
+
+        # اعمال تغییر وضعیت
+        app_record.current_status = next_state
+        db.commit()
+        db.refresh(app_record)
+
+        return app_record
