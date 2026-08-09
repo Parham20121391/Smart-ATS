@@ -60,3 +60,15 @@ async def health_check():
         "http_client": "ready",
         "client_closed": client.is_closed
     }
+@app.post("/test/ollama", tags=["Health Check"])
+async def test_ollama(prompt: str = "سلام، آیا آفلاین کار می‌کنی؟"):
+    """
+    تست ارتباط با موتور Ollama و مدل محلی qwen3-coder
+    """
+    response = await AsyncNetworkService.call_ollama(prompt)
+    return {
+        "status": "success",
+        "model": "qwen3-coder:30b",
+        "prompt": prompt,
+        "response": response
+    }

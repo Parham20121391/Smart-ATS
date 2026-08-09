@@ -1,5 +1,12 @@
 import httpx
 from fastapi import HTTPException, status
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3-coder:30b")
 
 
 class AsyncNetworkService:
@@ -13,12 +20,10 @@ class AsyncNetworkService:
     @classmethod
     def get_client(cls) -> httpx.AsyncClient:
         if cls._client is None or cls._client.is_closed:
-            # تنظیم محدودیت‌های اتصال متناسب با پردازش‌های سنگین
             limits = httpx.Limits(
                 max_keepalive_connections=50,
                 max_connections=200
             )
-            # تنظیم تایم‌اوت‌های طولانی برای پردازش‌های سنگین هوش مصنوعی
             timeout = httpx.Timeout(60.0)
             cls._client = httpx.AsyncClient(limits=limits, timeout=timeout)
         return cls._client
@@ -28,6 +33,37 @@ class AsyncNetworkService:
         if cls._client and not cls._client.is_closed:
             await cls._client.aclose()
             cls._client = None
+
+    @classmethod
+    async def call_ollama(cls, prompt: str) -> str:
+        """
+        ارسال درخواست به موتور Ollama و دریافت پاسخ مدل محلی
+        بدون نیاز به اینترنت و بدون هزینه توکن
+        """
+        try:
+            client = cls.get_client()
+            payload = {
+                "model": OLLAMA_MODEL,
+                "prompt": prompt,
+                "stream": False
+            }
+            response = await client.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json=payload,
+                timeout=120.0
+            )
+            response.raise_for_status()
+            return response.json().get("response", "")
+        except httpx.TimeoutException:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="موتور Ollama در زمان مقرر پاسخ نداد."
+            )
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=e.response.status_code,
+                detail=f"خطای ارتباط با Ollama: {str(e)}"
+            )
 
     @classmethod
     async def safe_get(cls, url: str, headers: dict = None) -> dict:
