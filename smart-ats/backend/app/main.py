@@ -2,9 +2,11 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.services.network import AsyncNetworkService
+from app.services.pdf_parser import PDFParserService
 from app.routers import jobs, applications
 from app.middleware import (
     http_exception_handler,
@@ -71,4 +73,17 @@ async def test_ollama(prompt: str = "سلام، آیا آفلاین کار می�
         "model": "qwen3-coder:30b",
         "prompt": prompt,
         "response": response
+    }
+@app.post("/test/pdf-parser", tags=["Health Check"])
+async def test_pdf_parser(file: UploadFile = File(...)):
+    """
+    تست استخراج متن از فایل PDF رزومه
+    """
+    file_bytes = await file.read()
+    extracted_text = PDFParserService.extract_text_from_bytes(file_bytes)
+    stats = PDFParserService.get_text_stats(extracted_text)
+    return {
+        "status": "success",
+        "stats": stats,
+        "preview": extracted_text[:500]
     }
