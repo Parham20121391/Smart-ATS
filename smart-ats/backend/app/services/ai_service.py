@@ -101,20 +101,30 @@ class OllamaAIService:
             )
 
     @classmethod
-    def check_digital_footprint(cls, extracted_data: ExtractedResumeSchema) -> dict:
+    def check_digital_footprint(cls, extracted_data: ExtractedResumeSchema, application_id: int = 0) -> dict:
+        """
+        تسک ۶۱ - بررسی تهی نبودن github_username و linkedin_url
+        تسک ۶۲ - ثبت تسک‌های ناهمگام در صف Celery
+        """
+        from app.celery_app import verify_github, verify_linkedin
+
         tasks_to_queue = []
 
         if extracted_data.github_username:
+            verify_github.delay(application_id, extracted_data.github_username)
             tasks_to_queue.append({
                 "type": "github_verification",
-                "username": extracted_data.github_username
+                "username": extracted_data.github_username,
+                "status": "queued_to_celery"
             })
             logger.info(f"GitHub verification queued for: {extracted_data.github_username}")
 
         if extracted_data.linkedin_url:
+            verify_linkedin.delay(application_id, extracted_data.linkedin_url)
             tasks_to_queue.append({
                 "type": "linkedin_verification",
-                "url": extracted_data.linkedin_url
+                "url": extracted_data.linkedin_url,
+                "status": "queued_to_celery"
             })
             logger.info(f"LinkedIn verification queued for: {extracted_data.linkedin_url}")
 
