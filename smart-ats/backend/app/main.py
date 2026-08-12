@@ -1,12 +1,12 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
 from fastapi import FastAPI, UploadFile, File
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.services.network import AsyncNetworkService
 from app.services.pdf_parser import PDFParserService
+from app.services.ai_service import OllamaAIService, ExtractedResumeSchema
 from app.routers import jobs, applications
 from app.middleware import (
     http_exception_handler,
@@ -34,7 +34,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# ثبت هندلرهای سراسری خطا
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, global_exception_handler)
@@ -62,6 +61,8 @@ async def health_check():
         "http_client": "ready",
         "client_closed": client.is_closed
     }
+
+
 @app.post("/test/ollama", tags=["Health Check"])
 async def test_ollama(prompt: str = "سلام، آیا آفلاین کار می‌کنی؟"):
     """
@@ -74,6 +75,8 @@ async def test_ollama(prompt: str = "سلام، آیا آفلاین کار می�
         "prompt": prompt,
         "response": response
     }
+
+
 @app.post("/test/pdf-parser", tags=["Health Check"])
 async def test_pdf_parser(file: UploadFile = File(...)):
     """
@@ -87,3 +90,49 @@ async def test_pdf_parser(file: UploadFile = File(...)):
         "stats": stats,
         "preview": extracted_text[:500]
     }
+
+
+@app.post("/test/ai-extract", tags=["Health Check"])
+async def test_ai_extraction(file: UploadFile = File(...)):
+    """
+    تست کامل پایپ‌لاین: PDF → متن خام → Ollama → JSON ساختاریافته
+    """
+    file_bytes = await file.read()
+    resume_text = PDFParserService.extract_text_from_bytes(file_bytes)
+    extracted_data = await OllamaAIService.extract_resume_metadata(resume_text)
+    footprint = OllamaAIService.check_digital_footprint(extracted_data)
+    return {
+        "status": "success",
+        "extracted_data": extracted_data.model_dump(),
+        "digital_footprint": footprint
+    }
+
+
+@app.post("/test/ollama-raw", tags=["Health Check"])
+async def test_ollama_raw(file: UploadFile = File(...)):
+    """
+    نمایش خروجی خام مدل بدون پارس
+    """
+    file_bytes = await file.read()
+    resume_text = PDFParserService.extract_text_from_bytes(file_bytes)
+
+    client = AsyncNetworkService.get_client()
+    payload = {
+        "model": "qwen3-coder:30b",
+        "prompt": f"Resume Text:\n{resume_text[:2000]}\n\nStrict JSON Output:",
+        "system": OllamaAIService.SYSTEM_PROMPT,
+        "stream": False,
+        "format": "json"
+    }
+    response = await client.post(
+        "http://localhost:11434/api/generate",
+        json=payload,
+        timeout=120.0
+    )
+    result = response.json()
+    raw = result.get("response", "")
+    return {
+        "raw_output": raw[:1000],
+        "length": len(raw)
+    }
+    
