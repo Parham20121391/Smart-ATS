@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from app.services.embedding_service import EmbeddingService
 from app.services.network import AsyncNetworkService
 from app.services.vector_db import VectorDBService
 from app.services.pdf_parser import PDFParserService
@@ -152,3 +153,19 @@ async def qdrant_info():
     """
     result = VectorDBService.get_collection_info()
     return result
+@app.post("/test/store-embedding", tags=["Health Check"])
+async def test_store_embedding():
+    """
+    تسک ۶۷، ۶۸، ۶۹، ۷۰ - تست کامل پایپ‌لاین امبدینگ و ذخیره در Qdrant
+    """
+    test_skills = ["Python", "FastAPI", "PostgreSQL", "Docker", "Redis"]
+    
+    result = EmbeddingService.store_candidate_skills(
+        candidate_id=1,
+        skills=test_skills,
+        application_id=1
+    )
+    return {
+        "status": "success",
+        "result": result
+    }

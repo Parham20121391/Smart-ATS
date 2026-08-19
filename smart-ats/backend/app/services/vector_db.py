@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "smart_ats_skills_embeddings"
-VECTOR_SIZE = 768
+VECTOR_SIZE = 384  # ابعاد خروجی مدل all-MiniLM-L6-v2
 
 
 class VectorDBService:
