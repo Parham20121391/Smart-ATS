@@ -5,6 +5,7 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.services.network import AsyncNetworkService
+from app.services.vector_db import VectorDBService
 from app.services.pdf_parser import PDFParserService
 from app.services.ai_service import OllamaAIService, ExtractedResumeSchema
 from app.routers import jobs, applications
@@ -135,4 +136,19 @@ async def test_ollama_raw(file: UploadFile = File(...)):
         "raw_output": raw[:1000],
         "length": len(raw)
     }
-    
+@app.post("/test/init-qdrant", tags=["Health Check"])
+async def init_qdrant():
+    """
+    تسک ۶۴، ۶۵، ۶۶ - راه‌اندازی Qdrant و ایجاد کالکشن مهارت‌ها
+    """
+    result = VectorDBService.initialize_skills_collection()
+    return result
+
+
+@app.get("/test/qdrant-info", tags=["Health Check"])
+async def qdrant_info():
+    """
+    دریافت اطلاعات کالکشن Qdrant
+    """
+    result = VectorDBService.get_collection_info()
+    return result
