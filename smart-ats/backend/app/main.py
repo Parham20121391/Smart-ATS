@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, UploadFile, File
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from app.services.semantic_matching import SemanticMatchingEngine
 from app.services.embedding_service import EmbeddingService
 from app.services.network import AsyncNetworkService
 from app.services.vector_db import VectorDBService
@@ -168,4 +169,36 @@ async def test_store_embedding():
     return {
         "status": "success",
         "result": result
+    }
+@app.post("/test/cosine-similarity", tags=["Health Check"])
+async def test_cosine_similarity():
+    """
+    تسک ۷۱، ۷۲، ۷۳، ۷۴ - تست موتور شباهت کسینوسی
+    """
+    # تست ۱ - دو بردار مشابه
+    vector_a = [1.0, 0.5, 0.3, 0.8]
+    vector_b = [0.9, 0.4, 0.35, 0.75]
+    similarity_high = SemanticMatchingEngine.calculate_cosine_similarity(vector_a, vector_b)
+
+    # تست ۲ - دو بردار متفاوت
+    vector_c = [1.0, 0.0, 0.0, 0.0]
+    vector_d = [0.0, 1.0, 0.0, 0.0]
+    similarity_low = SemanticMatchingEngine.calculate_cosine_similarity(vector_c, vector_d)
+
+    # تست ۳ - کنترل تقسیم بر صفر
+    vector_zero = [0.0, 0.0, 0.0, 0.0]
+    similarity_zero = SemanticMatchingEngine.calculate_cosine_similarity(vector_a, vector_zero)
+
+    # تست ۴ - جستجوی معنایی در Qdrant
+    job_skills = ["Python", "FastAPI", "PostgreSQL"]
+    matches = SemanticMatchingEngine.find_matching_candidates(job_skills)
+
+    return {
+        "status": "success",
+        "tests": {
+            "similar_vectors": round(similarity_high, 4),
+            "different_vectors": round(similarity_low, 4),
+            "zero_vector_safe": similarity_zero
+        },
+        "semantic_search_results": matches
     }
