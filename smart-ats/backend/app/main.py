@@ -202,3 +202,20 @@ async def test_cosine_similarity():
         },
         "semantic_search_results": matches
     }
+@app.post("/test/github-verify", tags=["Health Check"])
+async def test_github_verify():
+    """
+    تسک ۷۹، ۸۰، ۸۱، ۸۲ - تست ورکر اعتبارسنجی GitHub
+    """
+    from app.celery_app import verify_github_integrity_deep
+    
+    task = verify_github_integrity_deep.delay(
+        application_id=1,
+        github_username="Parham20121391"
+    )
+    
+    return {
+        "status": "queued",
+        "task_id": task.id,
+        "message": "تسک اعتبارسنجی GitHub در صف Celery قرار گرفت"
+    }
