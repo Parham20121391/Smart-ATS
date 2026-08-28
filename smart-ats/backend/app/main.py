@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Query
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.services.semantic_matching import SemanticMatchingEngine
@@ -203,19 +203,21 @@ async def test_cosine_similarity():
         "semantic_search_results": matches
     }
 @app.post("/test/github-verify", tags=["Health Check"])
-async def test_github_verify():
+async def test_github_verify(claimed_skill: str = Query(default="smart", description="مهارت ادعا شده")):
     """
-    تسک ۷۹، ۸۰، ۸۱، ۸۲ - تست ورکر اعتبارسنجی GitHub
+    تسک ۸۳، ۸۴، ۸۵، ۸۶، ۸۷ - تست ورکر تحلیل عمیق GitHub
     """
     from app.celery_app import verify_github_integrity_deep
-    
+
     task = verify_github_integrity_deep.delay(
-        application_id=1,
-        github_username="Parham20121391"
+        application_id=2,
+        github_username="Parham20121391",
+        claimed_skill=claimed_skill
     )
-    
+
     return {
         "status": "queued",
         "task_id": task.id,
-        "message": "تسک اعتبارسنجی GitHub در صف Celery قرار گرفت"
+        "claimed_skill": claimed_skill,
+        "message": "تسک تحلیل عمیق GitHub در صف Celery قرار گرفت"
     }
