@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from app.services.linkedin_matching import LinkedInCrossMatchingEngine
 from fastapi import FastAPI, UploadFile, File, Query
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -220,4 +221,30 @@ async def test_github_verify(claimed_skill: str = Query(default="smart", descrip
         "task_id": task.id,
         "claimed_skill": claimed_skill,
         "message": "تسک تحلیل عمیق GitHub در صف Celery قرار گرفت"
+    }
+@app.post("/test/linkedin-match", tags=["Health Check"])
+async def test_linkedin_match():
+    """
+    تسک ۸۸، ۸۹، ۹۰، ۹۱ - تست موتور تطابق لینکدین
+    """
+    # داده‌های رزومه
+    resume_exp = [
+        {"company": "Nextron", "months": 12, "role": "Backend Developer"},
+        {"company": "Fake Company", "months": 6, "role": "Senior Dev"}
+    ]
+
+    # داده‌های لینکدین
+    linkedin_exp = [
+        {"company": "Nextron", "months": 14},
+        {"company": "Google", "months": 24}
+    ]
+
+    result = LinkedInCrossMatchingEngine.analyze_timeline_consistency(
+        resume_exp=resume_exp,
+        linkedin_exp=linkedin_exp
+    )
+
+    return {
+        "status": "success",
+        "result": result
     }
