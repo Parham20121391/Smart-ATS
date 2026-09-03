@@ -6,6 +6,7 @@ from fastapi import FastAPI, UploadFile, File, Query
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.services.semantic_matching import SemanticMatchingEngine
+from app.services.crawler import WebCrawlerService
 from app.services.embedding_service import EmbeddingService
 from app.services.network import AsyncNetworkService
 from app.services.vector_db import VectorDBService
@@ -247,4 +248,16 @@ async def test_linkedin_match():
     return {
         "status": "success",
         "result": result
+    }
+@app.post("/test/crawl", tags=["Health Check"])
+async def test_crawl(url: str = Query(default="https://jobinja.ir", description="آدرس سایت هدف")):
+    """
+    تسک ۹۷، ۹۸، ۹۹، ۱۰۰، ۱۰۱ - تست خزنده وب با Playwright
+    """
+    content = await WebCrawlerService.crawl_job_page(url)
+    return {
+        "status": "success",
+        "url": url,
+        "content_length": len(content),
+        "preview": content[:500]
     }
