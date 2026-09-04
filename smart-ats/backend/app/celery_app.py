@@ -1,8 +1,11 @@
-from celery import Celery
-from dotenv import load_dotenv
 import os
 import httpx
 import logging
+import asyncio
+from celery import Celery
+from celery.schedules import crontab
+from dotenv import load_dotenv
+from playwright.async_api import async_playwright
 
 load_dotenv()
 
@@ -10,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
-
 
 celery_app = Celery(
     "smart_ats_workers",
@@ -26,6 +28,20 @@ celery_app.conf.update(
     enable_utc=True,
 )
 
+# --- اضافه شدن تسک 103: تنظیمات Celery Beat ---
+celery_app.conf.beat_schedule = {
+    "crawl-linkedin-jobs-periodic": {
+        "task": "tasks.execute_periodic_crawl",
+        "schedule": crontab(minute="0", hour="*/6"), # هر ۶ ساعت
+        "args": ("https://www.linkedin.com/jobs",),
+    },
+    "crawl-jobinja-periodic": {
+        "task": "tasks.execute_periodic_crawl",
+        "schedule": crontab(minute="30", hour="*/12"), # هر ۱۲ ساعت
+        "args": ("https://jobinja.ir/jobs",),
+    }
+}
+
 
 @celery_app.task(
     name="tasks.verify_github_integrity_deep",
@@ -34,9 +50,6 @@ celery_app.conf.update(
     default_retry_delay=60
 )
 def verify_github_integrity_deep(application_id: int, github_username: str, claimed_skill: str = "python"):
-    """
-    تسک ۸۳ - تحلیل عمیق مخازن گیت‌هاب و تولید نمره اصالت
-    """
     if not github_username:
         return "NO_GITHUB_PROVIDED"
 
@@ -66,12 +79,10 @@ def verify_github_integrity_deep(application_id: int, github_username: str, clai
             repo_name = repo.get("name", "").lower()
             description = (repo.get("description") or "").lower()
 
-            # تسک ۸۴ - جستجوی تطابقی در name و description
             if claimed_skill.lower() in repo_name or claimed_skill.lower() in description:
                 match_count += 1
                 total_stars += repo.get("stargazers_count", 0)
 
-                # تسک ۸۵ - اسکن فایل‌های پیکربندی
                 contents_url = f"https://api.github.com/repos/{github_username}/{repo.get('name')}/contents"
                 contents_resp = client.get(contents_url, headers=headers)
 
@@ -80,7 +91,6 @@ def verify_github_integrity_deep(application_id: int, github_username: str, clai
                     if "requirements.txt" in files or "pyproject.toml" in files or "package.json" in files:
                         has_dependency = True
 
-        # تسک ۸۶ - فرمول وزن‌دار نمره اصالت
         base_score = min((match_count / 2) * 60, 60)
         dependency_bonus = 25 if has_dependency else 0
         popularity_bonus = min(total_stars * 3, 15)
@@ -88,7 +98,6 @@ def verify_github_integrity_deep(application_id: int, github_username: str, clai
 
         logger.info(f"GitHub score for {github_username}: {final_score}")
 
-        # تسک ۸۷ - ذخیره نمره در دیتابیس با اصول ACID
         try:
             from sqlalchemy import create_engine, text
             from dotenv import load_dotenv
@@ -126,7 +135,6 @@ def verify_github_integrity_deep(application_id: int, github_username: str, clai
             "status": "SUCCESS"
         }
 
-
 @celery_app.task(name="tasks.verify_linkedin")
 def verify_linkedin(application_id: int, linkedin_url: str):
     logger.info(f"LinkedIn verification started for: {linkedin_url}")
@@ -135,3 +143,33 @@ def verify_linkedin(application_id: int, linkedin_url: str):
         "linkedin_url": linkedin_url,
         "status": "queued"
     }
+
+# --- اضافه شدن تسک 104: منطق کراولر Playwright ---
+async def run_headless_crawler(target_url: str) -> str:
+    """خزنده Playwright برای استخراج محتوای خام"""
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        )
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0"
+        )
+        page = await context.new_page()
+        try:
+            await page.goto(target_url, wait_until="networkidle", timeout=30000)
+            return await page.content()
+        except Exception as e:
+            return f"CRAWL_ERROR: {str(e)}"
+        finally:
+            await context.close()
+            await browser.close()
+
+@celery_app.task(name="tasks.execute_periodic_crawl")
+def execute_periodic_crawl(url: str):
+    """تسک همگام سلری برای اجرای کوروتین ناهمگام"""
+    loop = asyncio.get_event_loop()
+    if loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(run_headless_crawler(url))
