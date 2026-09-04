@@ -1,4 +1,5 @@
 import random
+import asyncio
 
 class ProxyRotationEngine:
     """
@@ -36,3 +37,12 @@ class ProxyRotationEngine:
             "Upgrade-Insecure-Requests": "1",
             "Cache-Control": "max-age=0"
         }
+
+    @staticmethod
+    async def apply_random_delay(min_sec: float = 1.0, max_sec: float = 4.0):
+        """
+        ایجاد تاخیر تصادفی بین درخواست‌ها جهت شبیه‌سازی رفتار انسانی
+        """
+        delay = random.uniform(min_sec, max_sec)
+        await asyncio.sleep(delay)
+        return round(delay, 2)
