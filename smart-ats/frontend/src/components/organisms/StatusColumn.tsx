@@ -22,10 +22,10 @@ export const StatusColumn: React.FC<StatusColumnProps> = ({
 
   return (
     <div
-      className={`flex flex-col min-w-[280px] w-full max-w-xs rounded-2xl border p-4 backdrop-blur-xl transition-all duration-200 ${
+      className={`flex flex-col min-w-[280px] w-full max-w-xs rounded-2xl p-4 backdrop-blur-xl transition-all duration-200 ${
         isFlaggedStage
-          ? "bg-rose-950/20 border-rose-900/50 shadow-[0_0_15px_rgba(244,63,94,0.08)]"
-          : "bg-slate-900/50 border-slate-800/80 shadow-[0_4px_24px_rgba(0,0,0,0.2)]"
+          ? "status-column-flagged"
+          : "bg-slate-900/50 border border-slate-800/80 shadow-[0_4px_24px_rgba(0,0,0,0.2)]"
       } ${className}`}
       dir="rtl"
     >

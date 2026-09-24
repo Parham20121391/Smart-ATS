@@ -30,10 +30,10 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`group relative p-4 rounded-xl border transition-all duration-200 cursor-pointer backdrop-blur-md ${
+      className={`group relative p-4 rounded-xl transition-all duration-200 cursor-pointer ${
         integrity_flag
-          ? "bg-slate-900/40 border-slate-800 hover:border-teal-500/40 hover:shadow-[0_4px_20px_rgba(20,184,166,0.1)]"
-          : "bg-rose-950/10 border-rose-900/40 hover:border-rose-500/40"
+          ? "glass-cyber-card"
+          : "bg-rose-950/10 border border-rose-900/40 hover:border-rose-500/40"
       } ${className}`}
       dir="rtl"
     >

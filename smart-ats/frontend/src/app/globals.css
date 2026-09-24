@@ -12,3 +12,28 @@ body {
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-start-rgb));
 }
+
+/* تسک ۲۰ و ۲۱: استایل کارت‌های شیشه‌ای با هاله نئونی سبز */
+.glass-cyber-card {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px 0 rgba(0, 254, 201, 0.05);
+  transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* تسک ۲۲: افکت تعاملی هاور، جابجایی سه‌بعدی و تشدید درخشش نئونی */
+.glass-cyber-card:hover {
+  transform: translateY(-6px) scale(1.02);
+  border-color: rgba(0, 254, 201, 0.4);
+  box-shadow: 0 12px 40px 0 rgba(0, 254, 201, 0.2);
+}
+
+/* تسک ۲۳: استایل اختصاصی رزومه‌های فیک و ستون‌های بلاک‌شده */
+.status-column-flagged {
+  background: rgba(254, 0, 75, 0.02);
+  border: 1px dashed rgba(254, 0, 75, 0.2);
+  box-shadow: inset 0 0 20px rgba(254, 0, 75, 0.05);
+}
