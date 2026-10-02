@@ -1,3 +1,6 @@
+// smart-ats/frontend/src/components/molecules/CandidateCard.tsx
+"use client";
+
 import React from "react";
 import { SkillBadge } from "@/atoms/SkillBadge";
 
@@ -22,15 +25,21 @@ export const CandidateCard: React.FC<CandidateCardProps> = ({
   onClick,
   className = "",
 }) => {
-  const { first_name, last_name, integrity_flag, skills = [], avatar_url } = candidate;
+  const { id, first_name, last_name, integrity_flag, skills = [], avatar_url } = candidate;
 
-  // استخراج حروف اول نام برای آواتار پیش‌فرض
   const initials = `${first_name?.[0] || ""}${last_name?.[0] || ""}`.toUpperCase();
+
+  // شروع کشیدن کارت و قرار دادن آیدی در دیتا ترانسفر (تسک ۳۴)
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+    e.dataTransfer.setData("text/plain", id.toString());
+  };
 
   return (
     <div
+      draggable
+      onDragStart={handleDragStart}
       onClick={onClick}
-      className={`group relative p-4 rounded-xl transition-all duration-200 cursor-pointer ${
+      className={`group relative p-4 rounded-xl transition-all duration-200 cursor-grab active:cursor-grabbing ${
         integrity_flag
           ? "glass-cyber-card"
           : "bg-rose-950/10 border border-rose-900/40 hover:border-rose-500/40"

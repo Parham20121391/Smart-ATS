@@ -1,10 +1,10 @@
+// smart-ats/frontend/src/components/organisms/KanbanBoard.tsx
 "use client";
 
 import React from "react";
 import { StatusColumn } from "./StatusColumn";
 import { CandidateCardData } from "@/molecules/CandidateCard";
 
-// وضعیت‌های مجاز و استاندارد ماشین وضعیت پروژه
 export const KANBAN_STAGES = [
   { key: "REGISTERED", title: "ثبت‌نام اولیه" },
   { key: "PENDING_VERIFICATION", title: "در انتظار اعتبارسنجی" },
@@ -18,12 +18,14 @@ export const KANBAN_STAGES = [
 
 interface KanbanBoardProps {
   candidates: CandidateCardData[];
+  onDropCandidate?: (candidateId: number, targetStage: string) => void;
   onCandidateClick?: (candidate: CandidateCardData) => void;
   className?: string;
 }
 
 export const KanbanBoard: React.FC<KanbanBoardProps> = ({
   candidates,
+  onDropCandidate,
   onCandidateClick,
   className = "",
 }) => {
@@ -44,6 +46,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({
               stageKey={stage.key}
               title={stage.title}
               candidates={stageCandidates}
+              onDropCandidate={onDropCandidate}
               onCandidateClick={onCandidateClick}
             />
           );
