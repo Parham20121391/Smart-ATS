@@ -15,6 +15,7 @@ class PDFParserService:
         استخراج متن خام از بایت‌های فایل PDF با بالاترین دقت
         """
         try:
+            PDFParserService.validate_pdf_bytes(file_bytes)
             text_pages = []
 
             with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
@@ -37,7 +38,7 @@ class PDFParserService:
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"خطا در پردازش فایل PDF: {str(e)}"
+                detail="خطا در پردازش فایل PDF."
             )
 
     @staticmethod
@@ -50,3 +51,13 @@ class PDFParserService:
             "total_words": len(text.split()),
             "total_lines": len(text.splitlines())
         }
+    MAX_FILE_SIZE = 10 * 1024 * 1024
+
+    @staticmethod
+    def validate_pdf_bytes(file_bytes: bytes) -> None:
+        if not file_bytes:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="فایل رزومه خالی است.")
+        if len(file_bytes) > PDFParserService.MAX_FILE_SIZE:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="حجم فایل رزومه بیشتر از حد مجاز است.")
+        if not file_bytes.startswith(b"%PDF-"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="فقط فایل PDF معتبر پذیرفته می‌شود.")

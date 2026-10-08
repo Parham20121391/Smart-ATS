@@ -1,4 +1,7 @@
 import json
+import re
+from html import unescape
+from urllib.parse import urlparse
 from contextlib import contextmanager
 from pydantic import ValidationError
 from app.schemas.job import NormalizedJobSchema
@@ -49,20 +52,22 @@ class JobNormalizerService:
     
     @classmethod
     async def process_and_save_raw_html(cls, raw_html: str, source: str):
-        cleaned_text = raw_html.replace("<div>", "").replace("</div>", "").strip()
-        
-        # خروجی ماک شده هوش مصنوعی
-        mock_llm_output = {
-            "title": "Senior Backend Developer",
-            "company_name": "Nextron Team",
-            "description": cleaned_text if cleaned_text else "We are looking for a FastAPI expert...",
-            "skills_required": ["Python", "FastAPI", "PostgreSQL"],
-            "original_url": "https://linkedin.com/jobs/view/123456"
+        title_match = re.search(r"<title[^>]*>(.*?)</title>", raw_html, flags=re.IGNORECASE | re.DOTALL)
+        title = unescape(re.sub(r"\s+", " ", title_match.group(1))).strip() if title_match else "Untitled Job"
+        cleaned_text = unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw_html))).strip()
+        parsed_source = urlparse(source)
+        company_name = parsed_source.hostname or source
+        normalized_output = {
+            "title": title[:255],
+            "company_name": company_name[:255],
+            "description": cleaned_text,
+            "skills_required": [],
+            "original_url": source
         }
         
         try:
             # اعتبارسنجی با Pydantic
-            normalized_data = NormalizedJobSchema(**mock_llm_output)
+            normalized_data = NormalizedJobSchema(**normalized_output)
             
             # تسک ۱۱۸ و ۱۱۹: باز کردن تراکنش امن و درج در دیتابیس
             with get_db_context_manager() as db:

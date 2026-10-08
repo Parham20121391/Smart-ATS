@@ -1,7 +1,11 @@
-from fastapi import APIRouter, Query, HTTPException, status
+from fastapi import APIRouter, Query, HTTPException, status, Depends
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from app.schemas.job import JobResponse
 from app.services.semantic_matching import SemanticMatchingEngine
+from app.database import get_db
+from app.models.job import Job
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/v1", tags=["Jobs"])
 
@@ -10,12 +14,16 @@ router = APIRouter(prefix="/api/v1", tags=["Jobs"])
 async def get_jobs(
     source_type: Optional[str] = Query(None, description="فیلتر بر اساس منبع آگهی کراول شده"),
     page: int = Query(1, ge=1, description="شماره صفحه"),
-    limit: int = Query(10, le=100, description="تعداد آیتم در هر صفحه")
+    limit: int = Query(10, le=100, description="تعداد آیتم در هر صفحه"),
+    db: Session = Depends(get_db)
 ):
     """
     دریافت لیست آگهی‌های شغلی با قابلیت فیلترینگ پیشرفته و صفحه‌بندی.
     """
-    return []
+    query = db.query(Job)
+    if source_type:
+        query = query.filter(Job.source_type == source_type.upper())
+    return query.order_by(Job.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
 
 
 @router.post("/jobs/match-candidates", status_code=status.HTTP_200_OK, tags=["Semantic Search"])

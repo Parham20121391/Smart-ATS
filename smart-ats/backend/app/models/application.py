@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Float, Boolean, String, DateTime, func
+from sqlalchemy import Column, Integer, Float, Boolean, String, DateTime, func, ForeignKey
 from sqlalchemy.dialects.postgresql import ENUM
 from app.database import Base
 
@@ -21,11 +21,11 @@ class Application(Base):
     __tablename__ = "applications"
 
     id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, nullable=False)
-    candidate_id = Column(Integer, nullable=False)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
+    candidate_id = Column(Integer, ForeignKey("candidates.id"), nullable=False)
     current_status = Column(application_status_enum, default='REGISTERED', nullable=False)
     score = Column(Float, default=0.0)
     github_verification_score = Column(Float, default=0.0)
     linkedin_match_status = Column(String(100), default='UNVERIFIED')
-    integrity_flag = Column(Boolean, default=True, nullable=False)
+    integrity_flag = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

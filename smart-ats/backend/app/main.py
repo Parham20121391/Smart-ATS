@@ -2,13 +2,14 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from app.services.linkedin_matching import LinkedInCrossMatchingEngine
-from fastapi import FastAPI, UploadFile, File, Query
+from fastapi import FastAPI, UploadFile, File, Query, Depends, Request
+from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.services.semantic_matching import SemanticMatchingEngine
 from app.services.crawler import WebCrawlerService
 from app.services.embedding_service import EmbeddingService
-from app.services.network import AsyncNetworkService
+from app.services.network import AsyncNetworkService, OLLAMA_BASE_URL, OLLAMA_MODEL
 from app.services.vector_db import VectorDBService
 from app.services.pdf_parser import PDFParserService
 from app.services.ai_service import OllamaAIService, ExtractedResumeSchema
@@ -16,7 +17,8 @@ from app.routers import jobs, applications
 from app.middleware import (
     http_exception_handler,
     validation_exception_handler,
-    global_exception_handler
+    global_exception_handler,
+    require_api_key
 )
 
 logging.basicConfig(
@@ -43,8 +45,18 @@ app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, global_exception_handler)
 
-app.include_router(jobs.router)
-app.include_router(applications.router)
+app.include_router(jobs.router, dependencies=[Depends(require_api_key)])
+app.include_router(applications.router, dependencies=[Depends(require_api_key)])
+
+
+@app.middleware("http")
+async def protect_test_routes(request: Request, call_next):
+    if request.url.path.startswith("/test/"):
+        try:
+            require_api_key(request.headers.get("x-api-key"))
+        except StarletteHTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"error": True, "message": exc.detail})
+    return await call_next(request)
 
 
 @app.get("/", tags=["Health Check"])
@@ -76,7 +88,7 @@ async def test_ollama(prompt: str = "سلام، آیا آفلاین کار می�
     response = await AsyncNetworkService.call_ollama(prompt)
     return {
         "status": "success",
-        "model": "qwen3-coder:30b",
+        "model": OLLAMA_MODEL,
         "prompt": prompt,
         "response": response
     }
@@ -88,6 +100,7 @@ async def test_pdf_parser(file: UploadFile = File(...)):
     تست استخراج متن از فایل PDF رزومه
     """
     file_bytes = await file.read()
+    PDFParserService.validate_pdf_bytes(file_bytes)
     extracted_text = PDFParserService.extract_text_from_bytes(file_bytes)
     stats = PDFParserService.get_text_stats(extracted_text)
     return {
@@ -103,6 +116,7 @@ async def test_ai_extraction(file: UploadFile = File(...)):
     تست کامل پایپ‌لاین: PDF → متن خام → Ollama → JSON ساختاریافته
     """
     file_bytes = await file.read()
+    PDFParserService.validate_pdf_bytes(file_bytes)
     resume_text = PDFParserService.extract_text_from_bytes(file_bytes)
     extracted_data = await OllamaAIService.extract_resume_metadata(resume_text)
     footprint = OllamaAIService.check_digital_footprint(extracted_data)
@@ -119,18 +133,19 @@ async def test_ollama_raw(file: UploadFile = File(...)):
     نمایش خروجی خام مدل بدون پارس
     """
     file_bytes = await file.read()
+    PDFParserService.validate_pdf_bytes(file_bytes)
     resume_text = PDFParserService.extract_text_from_bytes(file_bytes)
 
     client = AsyncNetworkService.get_client()
     payload = {
-        "model": "qwen3-coder:30b",
+        "model": OLLAMA_MODEL,
         "prompt": f"Resume Text:\n{resume_text[:2000]}\n\nStrict JSON Output:",
         "system": OllamaAIService.SYSTEM_PROMPT,
         "stream": False,
         "format": "json"
     }
     response = await client.post(
-        "http://localhost:11434/api/generate",
+        f"{OLLAMA_BASE_URL}/api/generate",
         json=payload,
         timeout=120.0
     )

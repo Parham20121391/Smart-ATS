@@ -1,10 +1,20 @@
-from fastapi import Request, status
+from fastapi import Request, status, Header, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import logging
+import os
+import secrets
 
 logger = logging.getLogger(__name__)
+
+
+def require_api_key(x_api_key: str = Header(None)):
+    api_key = os.getenv("API_ACCESS_KEY")
+    if not api_key:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="کلید دسترسی API پیکربندی نشده است.")
+    if not x_api_key or not secrets.compare_digest(x_api_key, api_key):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="دسترسی غیرمجاز است.")
 
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):

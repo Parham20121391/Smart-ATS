@@ -2,7 +2,7 @@ import json
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from fastapi import HTTPException, status
-from app.services.network import AsyncNetworkService
+from app.services.network import AsyncNetworkService, OLLAMA_BASE_URL, OLLAMA_MODEL
 import logging
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class OllamaAIService:
         client = AsyncNetworkService.get_client()
         prompt = f"Resume Text:\n{resume_text[:3000]}\n\nStrict JSON Output:"
         payload = {
-            "model": "qwen3-coder:30b",
+            "model": OLLAMA_MODEL,
             "prompt": prompt,
             "system": cls.SYSTEM_PROMPT,
             "stream": False,
@@ -43,7 +43,7 @@ class OllamaAIService:
 
         try:
             response = await client.post(
-                "http://localhost:11434/api/generate",
+                f"{OLLAMA_BASE_URL}/api/generate",
                 json=payload,
                 timeout=120.0
             )
@@ -106,12 +106,12 @@ class OllamaAIService:
         تسک ۶۱ - بررسی تهی نبودن github_username و linkedin_url
         تسک ۶۲ - ثبت تسک‌های ناهمگام در صف Celery
         """
-        from app.celery_app import verify_github, verify_linkedin
+        from app.celery_app import verify_github_integrity_deep, verify_linkedin
 
         tasks_to_queue = []
 
         if extracted_data.github_username:
-            verify_github.delay(application_id, extracted_data.github_username)
+            verify_github_integrity_deep.delay(application_id, extracted_data.github_username)
             tasks_to_queue.append({
                 "type": "github_verification",
                 "username": extracted_data.github_username,

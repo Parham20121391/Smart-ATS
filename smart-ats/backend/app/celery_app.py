@@ -122,6 +122,7 @@ def verify_github_integrity_deep(application_id: int, github_username: str, clai
             logger.info(f"DB updated for application_id: {application_id}")
         except Exception as e:
             logger.error(f"DB update failed: {str(e)}")
+            raise
 
         return {
             "application_id": application_id,
@@ -141,7 +142,7 @@ def verify_linkedin(application_id: int, linkedin_url: str):
     return {
         "application_id": application_id,
         "linkedin_url": linkedin_url,
-        "status": "queued"
+        "status": "NOT_IMPLEMENTED"
     }
 
 # --- اضافه شدن تسک 104: منطق کراولر Playwright ---
@@ -172,4 +173,8 @@ def execute_periodic_crawl(url: str):
     if loop.is_closed():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    return loop.run_until_complete(run_headless_crawler(url))
+    content = loop.run_until_complete(run_headless_crawler(url))
+    if content.startswith("CRAWL_ERROR:"):
+        raise RuntimeError(content)
+    from app.services.job_normalizer import JobNormalizerService
+    return loop.run_until_complete(JobNormalizerService.process_and_save_raw_html(content, url))

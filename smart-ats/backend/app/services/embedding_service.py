@@ -53,7 +53,10 @@ class EmbeddingService:
         embedding = cls.generate_embedding(skills_text)
 
         # تسک ۷۰ - ثبت متادیتا (Payload) شامل candidate_id
-        point_id = str(uuid.uuid4())
+        point_id = str(uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"smart-ats:{candidate_id}:{application_id}"
+        ))
         client.upsert(
             collection_name=COLLECTION_NAME,
             points=[
