@@ -20,7 +20,9 @@ from app.middleware import (
     global_exception_handler,
     require_api_key
 )
+from app.middleware import RateLimiterMiddleware
 
+app.add_middleware(RateLimiterMiddleware)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

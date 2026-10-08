@@ -1,73 +1,58 @@
-from fastapi import Request, status, Header, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
-import logging
+# smart-ats/backend/app/middleware.py
 import os
-import secrets
+import time
+from typing import Dict, Any
+import redis.asyncio as aioredis
+from fastapi import Request, Response, status
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
-logger = logging.getLogger(__name__)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-
-def require_api_key(x_api_key: str = Header(None)):
-    api_key = os.getenv("API_ACCESS_KEY")
-    if not api_key:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="کلید دسترسی API پیکربندی نشده است.")
-    if not x_api_key or not secrets.compare_digest(x_api_key, api_key):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="دسترسی غیرمجاز است.")
-
-
-async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    """
-    رهگیری تمام خطاهای HTTP و تبدیل به پاسخ JSON استاندارد
-    """
-    logger.warning(f"HTTP {exc.status_code}: {exc.detail} | Path: {request.url.path}")
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": True,
-            "status_code": exc.status_code,
-            "message": exc.detail,
-            "path": str(request.url.path)
+# تسک ۶۱: توسعه کلاس RateLimiterMiddleware بر بستر ردیس
+class RateLimiterMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app):
+        super().__init__(app)
+        self.redis = aioredis.from_url(REDIS_URL, decode_responses=True)
+        # تسک ۶۴: قوانین محدودسازی؛ اندپوینت ارسال درخواست: ۳ درخواست در ۶۰ ثانیه
+        self.rate_limits: Dict[str, Dict[str, int]] = {
+            "/api/v1/applications": {
+                "method": "POST",
+                "limit": 3,
+                "window": 60
+            }
         }
-    )
 
+    async def dispatch(self, request: Request, call_next) -> Response:
+        path = request.url.path
+        method = request.method
 
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """
-    رهگیری خطاهای اعتبارسنجی Pydantic و تبدیل به پاسخ ۴۰۰ خوانا
-    """
-    errors = []
-    for error in exc.errors():
-        errors.append({
-            "field": " -> ".join(str(x) for x in error["loc"]),
-            "message": error["msg"]
-        })
+        rule = self.rate_limits.get(path)
+        if rule and rule["method"] == method:
+            # تسک ۶۲: ساخت کلید اختصاصی ردیس rate_limit:{client_ip}:{request.url.path}
+            client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else "unknown")
+            redis_key = f"rate_limit:{client_ip}:{path}"
 
-    logger.warning(f"Validation Error | Path: {request.url.path} | Errors: {errors}")
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={
-            "error": True,
-            "status_code": 400,
-            "message": "داده‌های ورودی نامعتبر هستند.",
-            "details": errors,
-            "path": str(request.url.path)
-        }
-    )
+            try:
+                # تسک ۶۳: منطق اتمیک افزایش شمارنده و تنظیم انقضا
+                current_requests = await self.redis.incr(redis_key)
+                if current_requests == 1:
+                    await self.redis.expire(redis_key, rule["window"])
 
+                # تسک ۶۴ و ۶۰: صدور خطای ۴۲۹ با هدر Retry-After در صورت تخلف
+                if current_requests > rule["limit"]:
+                    ttl = await self.redis.ttl(redis_key)
+                    retry_after = ttl if ttl > 0 else rule["window"]
+                    return JSONResponse(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        content={
+                            "error": "تعداد درخواست‌های شما بیش از حد مجاز است. لطفاً بعداً تلاش کنید.",
+                            "detail": f"حداکثر {rule['limit']} درخواست در هر دقیقه مجاز است."
+                        },
+                        headers={"Retry-After": str(retry_after)}
+                    )
+            except Exception:
+                # Fail-open برای تضمین پایداری در صورت قطعی موقت ردیس
+                pass
 
-async def global_exception_handler(request: Request, exc: Exception):
-    """
-    رهگیری تمام خطاهای پیش‌بینی‌نشده - جلوگیری از نشت اطلاعات داخلی
-    """
-    logger.error(f"Unexpected Error | Path: {request.url.path} | Error: {str(exc)}")
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={
-            "error": True,
-            "status_code": 500,
-            "message": "خطای داخلی سرور. لطفاً با پشتیبانی تماس بگیرید.",
-            "path": str(request.url.path)
-        }
-    )
+        return await call_next(request)
