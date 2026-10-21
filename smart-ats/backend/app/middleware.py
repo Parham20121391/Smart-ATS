@@ -1,20 +1,53 @@
 # smart-ats/backend/app/middleware.py
 import os
-import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import redis.asyncio as aioredis
-from fastapi import Request, Response, status
+from fastapi import Request, Response, status, HTTPException, Security
+from fastapi.security import APIKeyHeader
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+API_KEY_NAME = "X-API-KEY"
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
-# تسک ۶۱: توسعه کلاس RateLimiterMiddleware بر بستر ردیس
+# ۱. هندلر خطاهای HTTP که main.py ایمپورت کرده
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
+
+# ۲. هندلر اعتبارسنجی ورودی Pydantic که main.py ایمپورت کرده
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": exc.errors()}
+    )
+
+# ۳. هندلر سراسری خطاهای سرور که main.py ایمپورت کرده
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "خطای داخلی سرور رخ داده است."}
+    )
+
+# ۴. گارد امنیتی API Key که main.py ایمپورت کرده
+async def require_api_key(api_key: Optional[str] = Security(api_key_header)):
+    expected_api_key = os.getenv("INTERNAL_API_KEY", "smart_ats_internal_secret_key")
+    if not api_key or api_key != expected_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="کلید API نامعتبر یا یافت نشد."
+        )
+    return api_key
+
+# ۵. لایه محدودسازی نرخ درخواست (Rate Limiting)
 class RateLimiterMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
         self.redis = aioredis.from_url(REDIS_URL, decode_responses=True)
-        # تسک ۶۴: قوانین محدودسازی؛ اندپوینت ارسال درخواست: ۳ درخواست در ۶۰ ثانیه
         self.rate_limits: Dict[str, Dict[str, int]] = {
             "/api/v1/applications": {
                 "method": "POST",
@@ -29,17 +62,14 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
 
         rule = self.rate_limits.get(path)
         if rule and rule["method"] == method:
-            # تسک ۶۲: ساخت کلید اختصاصی ردیس rate_limit:{client_ip}:{request.url.path}
             client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else "unknown")
             redis_key = f"rate_limit:{client_ip}:{path}"
 
             try:
-                # تسک ۶۳: منطق اتمیک افزایش شمارنده و تنظیم انقضا
                 current_requests = await self.redis.incr(redis_key)
                 if current_requests == 1:
                     await self.redis.expire(redis_key, rule["window"])
 
-                # تسک ۶۴ و ۶۰: صدور خطای ۴۲۹ با هدر Retry-After در صورت تخلف
                 if current_requests > rule["limit"]:
                     ttl = await self.redis.ttl(redis_key)
                     retry_after = ttl if ttl > 0 else rule["window"]
@@ -52,7 +82,6 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
                         headers={"Retry-After": str(retry_after)}
                     )
             except Exception:
-                # Fail-open برای تضمین پایداری در صورت قطعی موقت ردیس
                 pass
 
         return await call_next(request)
