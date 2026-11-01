@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.services.linkedin_matching import LinkedInCrossMatchingEngine
 from fastapi import FastAPI, UploadFile, File, Query, Depends, Request
@@ -21,7 +22,12 @@ from app.middleware import (
     require_api_key
 )
 from app.middleware import RateLimiterMiddleware
-
+app = FastAPI(
+    title="Smart ATS API",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 app.add_middleware(RateLimiterMiddleware)
 logging.basicConfig(
     level=logging.INFO,
