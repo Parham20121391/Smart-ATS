@@ -1,0 +1,21 @@
+groups:
+  - name: smart_ats_infrastructure_alerts
+    rules:
+      - alert: CeleryQueueBacklogHigh
+        expr: redis_list_length{key="celery"} > 50 or smart_ats_celery_queue_length > 50
+        for: 1m
+        labels:
+          severity: critical
+          service: celery-worker
+        annotations:
+          summary: "تراکم بالای صف پردازشی Celery (طول صف بیش از ۵۰ تسک)"
+          description: "طول صف پردازشی Celery از آستانه مجاز (۵۰ تسک در انتظار) عبور کرده است. لطفاً وضعیت ورکرهای پردازش رزومه و هوش مصنوعی را بررسی کنید."
+
+      - alert: ServiceDownAlert
+        expr: up == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "توقف سرویس حیاتی در زیرساخت Smart ATS ({{ $labels.job }})"
+          description: "سرویس {{ $labels.instance }} از جاب {{ $labels.job }} بیش از ۳۰ ثانیه است که در دسترس نیست."

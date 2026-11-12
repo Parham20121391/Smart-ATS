@@ -1,8 +1,10 @@
+import os
 import asyncio
 import logging
+import redis
 from fastapi import FastAPI, UploadFile, File, Query, Depends, Request
 from contextlib import asynccontextmanager
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.services.linkedin_matching import LinkedInCrossMatchingEngine
@@ -87,6 +89,26 @@ async def health_check():
         "http_client": "ready",
         "client_closed": client.is_closed
     }
+
+
+@app.get("/metrics", tags=["Monitoring"])
+async def prometheus_metrics():
+    """
+    تسک SAP-79 & SAP-81: خروجی متریک‌های سازگار با Prometheus شامل طول صف Celery
+    """
+    queue_len = 0
+    try:
+        r = redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), socket_connect_timeout=1.5)
+        queue_len = r.llen("celery")
+    except Exception:
+        queue_len = 0
+
+    metrics_text = (
+        "# HELP smart_ats_celery_queue_length Number of pending tasks in Celery queue\n"
+        "# TYPE smart_ats_celery_queue_length gauge\n"
+        f"smart_ats_celery_queue_length {queue_len}\n"
+    )
+    return PlainTextResponse(content=metrics_text, media_type="text/plain; version=0.0.4")
 
 
 @app.post("/test/ollama", tags=["Health Check"])

@@ -1,0 +1,64 @@
+{
+  "id": null,
+  "uid": "smart-ats-infra-01",
+  "title": "Smart ATS - Infrastructure & Celery Queue Monitoring",
+  "tags": ["smart-ats", "prometheus", "celery"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "مصرف پردازنده کانتینرها (Container CPU Usage %)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(container_cpu_usage_seconds_total[1m])) by (name) * 100",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "مصرف حافظه رم کانتینرها (Container RAM Usage MB)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "container_memory_usage_bytes / 1024 / 1024",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "طول صف پردازشی Celery (Celery Queue Length)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "redis_list_length{key=\"celery\"} or smart_ats_celery_queue_length",
+          "legendFormat": "Pending Tasks",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "وضعیت سلامت سرویس‌ها (Service Health UP)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "up",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

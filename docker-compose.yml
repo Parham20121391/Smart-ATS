@@ -82,10 +82,75 @@ services:
     networks:
       - smart_ats_net
 
+  # تسک SAP-79 & SAP-81: جمع‌آوری متریک‌های زیرساخت، CPU، RAM و صف Celery
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: smart_ats_cadvisor
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - smart_ats_net
+
+  redis_exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    container_name: smart_ats_redis_exporter
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+      - REDIS_EXPORTER_CHECK_KEYS=celery
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
+    networks:
+      - smart_ats_net
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: smart_ats_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    depends_on:
+      - cadvisor
+      - redis_exporter
+    networks:
+      - smart_ats_net
+
+  # تسک SAP-80: داشبوردهای مصورسازی Grafana
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: smart_ats_grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - smart_ats_net
+
 volumes:
   postgres_data:
   qdrant_data:
   elasticsearch_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
   smart_ats_net:
