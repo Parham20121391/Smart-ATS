@@ -1,0 +1,9 @@
+# Smart ATS Automated Disaster Recovery Schedules (SAP-83 & SAP-84)
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# تسک SAP-83: تهیه نسخه پشتیبان افزایشی (Incremental Backup) هر ۶ ساعت یک‌بار
+0 */6 * * * cd /opt/smart-ats && /opt/smart-ats/smart-ats/backend/venv/bin/python disaster_recovery/scripts/incremental_backup.py >> /var/log/smart_ats_inc_backup.log 2>&1
+
+# تسک SAP-84: تهیه نسخه پشتیبان کامل رمزنگاری شده (Full Backup) هر ۲۴ ساعت یک‌بار (ساعت ۰۲:۰۰ بامداد)
+0 2 * * * cd /opt/smart-ats && /opt/smart-ats/smart-ats/backend/venv/bin/python disaster_recovery/scripts/full_backup_encrypted.py >> /var/log/smart_ats_full_backup.log 2>&1
