@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any, List
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
+from app.database import set_current_tenant
 
 # تنظیمات کلید امنیتی و الگوریتم JWT
 SECRET_KEY = os.getenv("SECRET_KEY", "smart_ats_super_secret_jwt_key_2026_production")
@@ -40,9 +41,10 @@ class AuthService:
         user_id: int,
         username: str,
         role: str,
+        company_id: Optional[int] = None,
         expires_delta: Optional[timedelta] = None
     ) -> str:
-        """تسک ۴۷: تولید توکن JWT حاوی user_id, username و role"""
+        """تسک ۴۷ و SAP-74: تولید توکن JWT حاوی user_id, username, role و company_id"""
         if expires_delta:
             expire = datetime.now(timezone.utc) + expires_delta
         else:
@@ -52,6 +54,7 @@ class AuthService:
             "sub": username,
             "user_id": user_id,
             "role": role,
+            "company_id": company_id,
             "exp": expire,
             "iat": datetime.now(timezone.utc)
         }
@@ -60,9 +63,9 @@ class AuthService:
         return encoded_jwt
 
 
-# تسک ۴۸ و ۴۹: تابع استخراج مشخصات کاربر و پرتاب ارور ۴۰۱
+# تسک ۴۸، ۴۹ و SAP-74: استخراج مشخصات کاربر و تزریق خودکار مستأجر به کانتکست ORM
 async def get_current_user_role(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
-    """استخراج و بررسی توکن از هدر Authorization"""
+    """استخراج و بررسی توکن از هدر Authorization و تنظیم خودکار company_id در لایه ORM"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="توکن احراز هویت نامعتبر یا منقضی شده است.",
@@ -73,14 +76,19 @@ async def get_current_user_role(token: str = Depends(oauth2_scheme)) -> Dict[str
         username: Optional[str] = payload.get("sub")
         role: Optional[str] = payload.get("role")
         user_id: Optional[int] = payload.get("user_id")
+        company_id: Optional[int] = payload.get("company_id")
 
         if username is None or role is None or user_id is None:
             raise credentials_exception
 
+        if company_id is not None:
+            set_current_tenant(int(company_id))
+
         return {
             "user_id": user_id,
             "username": username,
-            "role": role
+            "role": role,
+            "company_id": company_id
         }
     except JWTError:
         raise credentials_exception
@@ -97,7 +105,7 @@ class RoleChecker:
 
     def __call__(self, current_user: Dict[str, Any] = Depends(get_current_user_role)) -> Dict[str, Any]:
         user_role = current_user.get("role")
-        
+
         # تسک ۵۲: دسترسی کامل ادمین سیستم به تمامی بخش‌ها
         if user_role == "Admin":
             return current_user
