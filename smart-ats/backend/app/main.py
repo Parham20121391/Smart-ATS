@@ -1,12 +1,11 @@
 import asyncio
 import logging
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
-from app.services.linkedin_matching import LinkedInCrossMatchingEngine
 from fastapi import FastAPI, UploadFile, File, Query, Depends, Request
+from contextlib import asynccontextmanager
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from app.services.linkedin_matching import LinkedInCrossMatchingEngine
 from app.services.semantic_matching import SemanticMatchingEngine
 from app.services.crawler import WebCrawlerService
 from app.services.embedding_service import EmbeddingService
@@ -14,29 +13,24 @@ from app.services.network import AsyncNetworkService, OLLAMA_BASE_URL, OLLAMA_MO
 from app.services.vector_db import VectorDBService
 from app.services.pdf_parser import PDFParserService
 from app.services.ai_service import OllamaAIService, ExtractedResumeSchema
+from app.services.elk_logger import setup_centralized_logging
 from app.routers import jobs, applications
 from app.middleware import (
     http_exception_handler,
     validation_exception_handler,
     global_exception_handler,
-    require_api_key
+    require_api_key,
+    RateLimiterMiddleware
 )
-from app.middleware import RateLimiterMiddleware
-app = FastAPI(
-    title="Smart ATS API",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
-app.add_middleware(RateLimiterMiddleware)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+
+# تسک SAP-77: راه‌اندازی لاگینگ متمرکز FastAPI به سمت Logstash
+setup_centralized_logging(service_name="smart-ats-fastapi")
+logger = logging.getLogger("smart-ats-fastapi")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Smart ATS FastAPI server starting up with centralized ELK logging.")
     AsyncNetworkService.get_client()
     yield
     await AsyncNetworkService.close_client()
@@ -46,9 +40,12 @@ app = FastAPI(
     title="Smart ATS API",
     description="سیستم هوشمند فرامرزی تجمیع‌کننده و راستی‌آزمایی جذب و استخدام",
     version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
     lifespan=lifespan
 )
 
+app.add_middleware(RateLimiterMiddleware)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, global_exception_handler)
@@ -64,7 +61,11 @@ async def protect_test_routes(request: Request, call_next):
             require_api_key(request.headers.get("x-api-key"))
         except StarletteHTTPException as exc:
             return JSONResponse(status_code=exc.status_code, content={"error": True, "message": exc.detail})
-    return await call_next(request)
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        logger.error(f"Unhandled API error on {request.method} {request.url.path}: {exc}", exc_info=True)
+        raise
 
 
 @app.get("/", tags=["Health Check"])
@@ -163,6 +164,8 @@ async def test_ollama_raw(file: UploadFile = File(...)):
         "raw_output": raw[:1000],
         "length": len(raw)
     }
+
+
 @app.post("/test/init-qdrant", tags=["Health Check"])
 async def init_qdrant():
     """
@@ -179,13 +182,15 @@ async def qdrant_info():
     """
     result = VectorDBService.get_collection_info()
     return result
+
+
 @app.post("/test/store-embedding", tags=["Health Check"])
 async def test_store_embedding():
     """
     تسک ۶۷، ۶۸، ۶۹، ۷۰ - تست کامل پایپ‌لاین امبدینگ و ذخیره در Qdrant
     """
     test_skills = ["Python", "FastAPI", "PostgreSQL", "Docker", "Redis"]
-    
+
     result = EmbeddingService.store_candidate_skills(
         candidate_id=1,
         skills=test_skills,
@@ -195,26 +200,24 @@ async def test_store_embedding():
         "status": "success",
         "result": result
     }
+
+
 @app.post("/test/cosine-similarity", tags=["Health Check"])
 async def test_cosine_similarity():
     """
     تسک ۷۱، ۷۲، ۷۳، ۷۴ - تست موتور شباهت کسینوسی
     """
-    # تست ۱ - دو بردار مشابه
     vector_a = [1.0, 0.5, 0.3, 0.8]
     vector_b = [0.9, 0.4, 0.35, 0.75]
     similarity_high = SemanticMatchingEngine.calculate_cosine_similarity(vector_a, vector_b)
 
-    # تست ۲ - دو بردار متفاوت
     vector_c = [1.0, 0.0, 0.0, 0.0]
     vector_d = [0.0, 1.0, 0.0, 0.0]
     similarity_low = SemanticMatchingEngine.calculate_cosine_similarity(vector_c, vector_d)
 
-    # تست ۳ - کنترل تقسیم بر صفر
     vector_zero = [0.0, 0.0, 0.0, 0.0]
     similarity_zero = SemanticMatchingEngine.calculate_cosine_similarity(vector_a, vector_zero)
 
-    # تست ۴ - جستجوی معنایی در Qdrant
     job_skills = ["Python", "FastAPI", "PostgreSQL"]
     matches = SemanticMatchingEngine.find_matching_candidates(job_skills)
 
@@ -227,6 +230,8 @@ async def test_cosine_similarity():
         },
         "semantic_search_results": matches
     }
+
+
 @app.post("/test/github-verify", tags=["Health Check"])
 async def test_github_verify(claimed_skill: str = Query(default="smart", description="مهارت ادعا شده")):
     """
@@ -246,18 +251,18 @@ async def test_github_verify(claimed_skill: str = Query(default="smart", descrip
         "claimed_skill": claimed_skill,
         "message": "تسک تحلیل عمیق GitHub در صف Celery قرار گرفت"
     }
+
+
 @app.post("/test/linkedin-match", tags=["Health Check"])
 async def test_linkedin_match():
     """
     تسک ۸۸، ۸۹، ۹۰، ۹۱ - تست موتور تطابق لینکدین
     """
-    # داده‌های رزومه
     resume_exp = [
         {"company": "Nextron", "months": 12, "role": "Backend Developer"},
         {"company": "Fake Company", "months": 6, "role": "Senior Dev"}
     ]
 
-    # داده‌های لینکدین
     linkedin_exp = [
         {"company": "Nextron", "months": 14},
         {"company": "Google", "months": 24}
@@ -272,6 +277,8 @@ async def test_linkedin_match():
         "status": "success",
         "result": result
     }
+
+
 @app.post("/test/crawl", tags=["Health Check"])
 async def test_crawl(url: str = Query(default="https://jobinja.ir", description="آدرس سایت هدف")):
     """

@@ -4,12 +4,23 @@ import logging
 import asyncio
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import after_setup_logger, after_setup_task_logger
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
+from app.services.elk_logger import setup_centralized_logging
 
 load_dotenv()
 
+# تسک SAP-77: راه‌اندازی ارسال متمرکز لاگ‌های ورکرهای Celery و هوش مصنوعی به Logstash
+setup_centralized_logging(service_name="smart-ats-celery-worker")
 logger = logging.getLogger(__name__)
+
+
+@after_setup_logger.connect
+@after_setup_task_logger.connect
+def configure_celery_elk_logging(logger, *args, **kwargs):
+    setup_centralized_logging(service_name="smart-ats-celery-worker")
+
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -26,18 +37,19 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="Asia/Tehran",
     enable_utc=True,
+    worker_hijack_root_logger=False,
 )
 
 # --- اضافه شدن تسک 103: تنظیمات Celery Beat ---
 celery_app.conf.beat_schedule = {
     "crawl-linkedin-jobs-periodic": {
         "task": "tasks.execute_periodic_crawl",
-        "schedule": crontab(minute="0", hour="*/6"), # هر ۶ ساعت
+        "schedule": crontab(minute="0", hour="*/6"),  # هر ۶ ساعت
         "args": ("https://www.linkedin.com/jobs",),
     },
     "crawl-jobinja-periodic": {
         "task": "tasks.execute_periodic_crawl",
-        "schedule": crontab(minute="30", hour="*/12"), # هر ۱۲ ساعت
+        "schedule": crontab(minute="30", hour="*/12"),  # هر ۱۲ ساعت
         "args": ("https://jobinja.ir/jobs",),
     }
 }
@@ -102,13 +114,13 @@ def verify_github_integrity_deep(application_id: int, github_username: str, clai
             from sqlalchemy import create_engine, text
             from dotenv import load_dotenv
             load_dotenv()
-            
+
             engine = create_engine(os.getenv("DATABASE_URL"))
-            
+
             with engine.begin() as conn:
                 conn.execute(
                     text("""
-                        UPDATE applications 
+                        UPDATE applications
                         SET github_verification_score = :score,
                             integrity_flag = :flag
                         WHERE id = :app_id
@@ -121,7 +133,7 @@ def verify_github_integrity_deep(application_id: int, github_username: str, clai
                 )
             logger.info(f"DB updated for application_id: {application_id}")
         except Exception as e:
-            logger.error(f"DB update failed: {str(e)}")
+            logger.error(f"DB update failed: {str(e)}", exc_info=True)
             raise
 
         return {
@@ -136,6 +148,7 @@ def verify_github_integrity_deep(application_id: int, github_username: str, clai
             "status": "SUCCESS"
         }
 
+
 @celery_app.task(name="tasks.verify_linkedin")
 def verify_linkedin(application_id: int, linkedin_url: str):
     logger.info(f"LinkedIn verification started for: {linkedin_url}")
@@ -144,6 +157,7 @@ def verify_linkedin(application_id: int, linkedin_url: str):
         "linkedin_url": linkedin_url,
         "status": "NOT_IMPLEMENTED"
     }
+
 
 # --- اضافه شدن تسک 104: منطق کراولر Playwright ---
 async def run_headless_crawler(target_url: str) -> str:
@@ -161,10 +175,12 @@ async def run_headless_crawler(target_url: str) -> str:
             await page.goto(target_url, wait_until="networkidle", timeout=30000)
             return await page.content()
         except Exception as e:
+            logger.error(f"Playwright crawl failed for {target_url}: {str(e)}", exc_info=True)
             return f"CRAWL_ERROR: {str(e)}"
         finally:
             await context.close()
             await browser.close()
+
 
 @celery_app.task(name="tasks.execute_periodic_crawl")
 def execute_periodic_crawl(url: str):
