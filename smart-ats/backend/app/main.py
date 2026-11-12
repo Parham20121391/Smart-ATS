@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from sqlalchemy.orm import Session
+from app.database import SessionLocal
 from app.services.linkedin_matching import LinkedInCrossMatchingEngine
 from app.services.semantic_matching import SemanticMatchingEngine
 from app.services.crawler import WebCrawlerService
@@ -16,6 +18,7 @@ from app.services.vector_db import VectorDBService
 from app.services.pdf_parser import PDFParserService
 from app.services.ai_service import OllamaAIService, ExtractedResumeSchema
 from app.services.elk_logger import setup_centralized_logging
+from app.services.kpi_tracker import KPITrackingService
 from app.routers import jobs, applications
 from app.middleware import (
     http_exception_handler,
@@ -30,9 +33,17 @@ setup_centralized_logging(service_name="smart-ats-fastapi")
 logger = logging.getLogger("smart-ats-fastapi")
 
 
+def get_db_session():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Smart ATS FastAPI server starting up with centralized ELK logging.")
+    logger.info("Smart ATS v3.0.0 FastAPI server starting up with centralized ELK & KPI tracking.")
     AsyncNetworkService.get_client()
     yield
     await AsyncNetworkService.close_client()
@@ -40,8 +51,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Smart ATS API",
-    description="سیستم هوشمند فرامرزی تجمیع‌کننده و راستی‌آزمایی جذب و استخدام",
-    version="1.0.0",
+    description="سیستم هوشمند فرامرزی تجمیع‌کننده و راستی‌آزمایی جذب و استخدام (نسخه تجاری ۳.۰۰)",
+    version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
@@ -76,6 +87,7 @@ async def root():
     return {
         "status": "online",
         "system": "Smart ATS",
+        "version": "3.0.0",
         "async_support": True,
         "event_loop_running": loop.is_running()
     }
@@ -86,15 +98,24 @@ async def health_check():
     client = AsyncNetworkService.get_client()
     return {
         "status": "healthy",
+        "version": "3.0.0",
         "http_client": "ready",
         "client_closed": client.is_closed
     }
 
 
-@app.get("/metrics", tags=["Monitoring"])
-async def prometheus_metrics():
+@app.get("/api/v1/kpis", tags=["Commercial KPIs"], dependencies=[Depends(require_api_key)])
+async def get_commercial_kpis(db: Session = Depends(get_db_session)):
     """
-    تسک SAP-79 & SAP-81: خروجی متریک‌های سازگار با Prometheus شامل طول صف Celery
+    تسک SAP-86, SAP-88, SAP-89, SAP-90: گزارش زنده شاخص‌های کلیدی عملکرد پلتفرم
+    """
+    return KPITrackingService.get_all_commercial_kpis(db)
+
+
+@app.get("/metrics", tags=["Monitoring"])
+async def prometheus_metrics(db: Session = Depends(get_db_session)):
+    """
+    تسک SAP-79, SAP-81, SAP-86..90: خروجی متریک‌های Prometheus شامل صف Celery و KPIهای تجاری
     """
     queue_len = 0
     try:
@@ -103,10 +124,24 @@ async def prometheus_metrics():
     except Exception:
         queue_len = 0
 
+    kpi_report = KPITrackingService.get_all_commercial_kpis(db)["kpis"]
+    false_red = kpi_report["false_interview_reduction"]["current_rate_percent"]
+    crawler_rate = kpi_report["crawler_success_rate"]["current_rate_percent"]
+    avg_hire_hours = kpi_report["average_time_to_hire"]["average_hours"]
+
     metrics_text = (
         "# HELP smart_ats_celery_queue_length Number of pending tasks in Celery queue\n"
         "# TYPE smart_ats_celery_queue_length gauge\n"
         f"smart_ats_celery_queue_length {queue_len}\n"
+        "# HELP smart_ats_false_interview_reduction_rate Percentage of false interviews prevented (Target >= 40%)\n"
+        "# TYPE smart_ats_false_interview_reduction_rate gauge\n"
+        f"smart_ats_false_interview_reduction_rate {false_red}\n"
+        "# HELP smart_ats_crawler_success_rate Crawler firewall bypass success rate percentage (Target > 85%)\n"
+        "# TYPE smart_ats_crawler_success_rate gauge\n"
+        f"smart_ats_crawler_success_rate {crawler_rate}\n"
+        "# HELP smart_ats_avg_time_to_hire_hours Average hours from PENDING_VERIFICATION to HIRED\n"
+        "# TYPE smart_ats_avg_time_to_hire_hours gauge\n"
+        f"smart_ats_avg_time_to_hire_hours {avg_hire_hours}\n"
     )
     return PlainTextResponse(content=metrics_text, media_type="text/plain; version=0.0.4")
 
